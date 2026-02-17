@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GraphQL Fetch Demo (Countries API)</title>
+    <style>
+      body {
+        font-family: Arial, Helvetica, sans-serif;
+        margin: 24px;
+        max-width: 900px;
+        line-height: 1.4;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 14px;
+      }
+      label {
+        font-weight: 700;
+      }
+      input {
+        padding: 10px;
+        width: 140px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        font-size: 14px;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+      button {
+        padding: 10px 12px;
+        border: 1px solid #111;
+        background: #111;
+        color: #fff;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .status {
+        margin-top: 10px;
+        padding: 12px;
+        border-radius: 6px;
+        background: #f6f6f6;
+        border: 1px solid #e6e6e6;
+        color: #222;
+      }
+      .error {
+        background: #fff3f3;
+        border-color: #ffd1d1;
+        color: #7a0000;
+      }
+      .card {
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        padding: 16px;
+        background: #fafafa;
+      }
+      .title {
+        margin: 0 0 8px 0;
+        font-size: 20px;
+      }
+      .meta {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px 16px;
+        margin: 12px 0 10px 0;
+      }
+      .meta p {
+        margin: 0;
+      }
+      .meta b {
+        display: inline-block;
+        min-width: 90px;
+      }
+      ul {
+        margin: 8px 0 0 20px;
+      }
+      details {
+        margin-top: 14px;
+      }
+      pre {
+        background: #f6f6f6;
+        padding: 12px;
+        border-radius: 6px;
+        overflow: auto;
+        border: 1px solid #e6e6e6;
+        font-family: "Courier New", Courier, monospace;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <h1>GraphQL Fetch Demo (Countries API)</h1>
+
+    <div class="row">
+      <label for="code">Country code (ISO 2):</label>
+      <input id="code" value="IN" maxlength="2" />
+      <button id="runBtn">Run query</button>
+    </div>
+
+    <div id="output" class="status" aria-live="polite">Click “Run query”...</div>
+
+    <script>
+      const ENDPOINT = "https://countries.trevorblades.com/graphql";
+
+      const COUNTRY_QUERY = `
+        query GetCountry($code: ID!) {
+          country(code: $code) {
+            code
+            name
+            native
+            capital
+            emoji
+            currency
+            languages { code name }
+          }
+        }
+      `;
+
+      const outputEl = document.getElementById("output");
+      const codeEl = document.getElementById("code");
+      const runBtn = document.getElementById("runBtn");
+
+      function toSafeHtml(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function showMessage(text, isError = false) {
+        outputEl.className = "status" + (isError ? " error" : "");
+        outputEl.textContent = text;
+      }
+
+      function renderCountry(country) {
+        const langs = Array.isArray(country.languages) ? country.languages : [];
+        const langList = langs.length
+          ? langs
+              .map((l) => `<li>${toSafeHtml(l.name)} (${toSafeHtml(l.code)})</li>`)
+              .join("")
+          : "<li>N/A</li>";
+
+        outputEl.className = "card";
+        outputEl.innerHTML = `
+          <h2 class="title">${toSafeHtml(country.emoji)} ${toSafeHtml(country.name)} (${toSafeHtml(country.code)})</h2>
+
+          <div class="meta">
+            <p><b>Native:</b> ${toSafeHtml(country.native)}</p>
+            <p><b>Capital:</b> ${toSafeHtml(country.capital || "N/A")}</p>
+            <p><b>Currency:</b> ${toSafeHtml(country.currency || "N/A")}</p>
+            <p><b>Languages:</b> ${langs.length}</p>
+          </div>
+
+          <h3>Languages</h3>
+          <ul>${langList}</ul>
+
+          <details>
+            <summary>Raw JSON</summary>
+            <pre>${toSafeHtml(JSON.stringify(country, null, 2))}</pre>
+          </details>
+        `;
+      }
+
+      async function fetchCountry(code) {
+        const resp = await fetch(ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query: COUNTRY_QUERY,
+            variables: { code },
+          }),
+        });
+
+        const payload = await resp.json();
+        return { ok: resp.ok, status: resp.status, payload };
+      }
+
+      async function run() {
+        const code = codeEl.value.trim().toUpperCase();
+
+        if (code.length !== 2) {
+          showMessage("Enter a 2-letter country code.", true);
+          return;
+        }
+
+        runBtn.disabled = true;
+        showMessage("Loading...");
+
+        try {
+          const { ok, status, payload } = await fetchCountry(code);
+
+          if (!ok) {
+            showMessage(`Request failed (HTTP ${status}).`, true);
+            return;
+          }
+
+          if (payload.errors) {
+            showMessage(JSON.stringify(payload.errors, null, 2), true);
+            return;
+          }
+
+          const country = payload.data?.country;
+          if (!country) {
+            showMessage(`No country found for "${code}".`, true);
+            return;
+          }
+
+          renderCountry(country);
+        } catch (e) {
+          showMessage(String(e), true);
+        } finally {
+          runBtn.disabled = false;
+        }
+      }
+
+      runBtn.addEventListener("click", run);
+      codeEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") run();
+      });
+
+      run();
+    </script>
+  </body>
+</html>
